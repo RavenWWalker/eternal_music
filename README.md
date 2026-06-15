@@ -3,7 +3,7 @@
 Бесконечная процедурная мелодия — каждое прослушивание уникально.
 Колокольчики и тёплый пэд, сгенерированные алгоритмически.
 
-**🎧 [Послушать в браузере](https://ВАШ_НИК.github.io/music-box/)**
+**🎧 [Послушать в браузере](https://ravenwwalker.github.io/eternal_music/)**
 
 ## Что это
 
@@ -24,8 +24,8 @@
 ### Установка
 
 ```bash
-git clone https://github.com/ВАШ_НИК/music-box.git
-cd music-box
+git clone https://github.com/ravenwwalker/eternal_music.git
+cd eternal_music
 pip install -r requirements.txt
 ```
 
@@ -46,7 +46,7 @@ python music_box.py
 ## Структура
 
 ```
-music-box/
+eternal_music/
 ├── index.html          # Веб-страница
 ├── style.css           # Стили
 ├── music.js            # Логика веб-версии (Web Audio API)
