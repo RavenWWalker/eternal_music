@@ -28,7 +28,23 @@
             <p class="subtitle">Бесконечная процедурная мелодия</p>
 
             <div class="visualizer">
-                <div class="circle" id="circle"></div>
+                <svg id="jellyfish" viewBox="-100 -100 200 200" preserveAspectRatio="xMidYMid meet">
+                    <defs>
+                        <radialGradient id="jellyGradient" cx="50%" cy="50%" r="50%">
+                            <stop offset="0%" class="jelly-stop-1" />
+                            <stop offset="60%" class="jelly-stop-2" />
+                            <stop offset="100%" class="jelly-stop-3" />
+                        </radialGradient>
+                        <filter id="jellyGlow" x="-50%" y="-50%" width="200%" height="200%">
+                            <feGaussianBlur stdDeviation="4" result="blur" />
+                            <feMerge>
+                                <feMergeNode in="blur" />
+                                <feMergeNode in="SourceGraphic" />
+                            </feMerge>
+                        </filter>
+                    </defs>
+                    <path id="jellyPath" fill="url(#jellyGradient)" filter="url(#jellyGlow)" />
+                </svg>
             </div>
 
             <button id="playBtn" class="play-btn">
