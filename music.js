@@ -1,6 +1,3 @@
-// Музыкальная шкатулка — Web Audio версия
-// Полная процедурная генерация: колокольчики + пэд
-
 const NOTES = {
     'E2': 82.41, 'F2': 87.31, 'G2': 98.00, 'A2': 110.00,
     'B2': 123.47, 'Bb2': 116.54,
@@ -59,6 +56,7 @@ class MusicBox {
         this.audioCtx = null;
         this.masterGain = null;
         this.reverbNode = null;
+        this.analyser = null;
         this.isPlaying = false;
         this.volume = 0.5;
         this.tempoMultiplier = 1.0;
@@ -69,12 +67,17 @@ class MusicBox {
         if (this.audioCtx) return;
         this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
-        // Главный регулятор громкости
         this.masterGain = this.audioCtx.createGain();
         this.masterGain.gain.value = this.volume;
-        this.masterGain.connect(this.audioCtx.destination);
 
-        // Реверберация через свёртку с искусственным импульсом
+        // Анализатор для визуализации
+        this.analyser = this.audioCtx.createAnalyser();
+        this.analyser.fftSize = 256;
+        this.analyser.smoothingTimeConstant = 0.85;
+
+        this.masterGain.connect(this.analyser);
+        this.analyser.connect(this.audioCtx.destination);
+
         this.reverbNode = this.audioCtx.createConvolver();
         this.reverbNode.buffer = this.createReverbImpulse(3.0, 2.5);
 
@@ -83,7 +86,6 @@ class MusicBox {
         this.reverbNode.connect(reverbGain);
         reverbGain.connect(this.masterGain);
 
-        // Сухой канал тоже идёт в master
         this.dryGain = this.audioCtx.createGain();
         this.dryGain.gain.value = 0.7;
         this.dryGain.connect(this.masterGain);
@@ -102,14 +104,11 @@ class MusicBox {
         return impulse;
     }
 
-    // Колокольчик — несколько осцилляторов с негармоническими частотами
     playBell(noteName, velocity = 1.0) {
         const freq = NOTES[noteName];
         if (!freq) return;
-
         const now = this.audioCtx.currentTime;
         const duration = 3.0;
-
         const partials = [
             { ratio: 0.5,  amp: 0.35, decay: 1.0 },
             { ratio: 1.0,  amp: 1.0,  decay: 1.3 },
@@ -119,95 +118,67 @@ class MusicBox {
             { ratio: 5.40, amp: 0.10, decay: 5.5 },
             { ratio: 8.93, amp: 0.04, decay: 7.5 },
         ];
-
         const bellGain = this.audioCtx.createGain();
         bellGain.gain.value = 0.18 * velocity;
-
-        // Мягкий low-pass — теплее звук
         const filter = this.audioCtx.createBiquadFilter();
         filter.type = 'lowpass';
         filter.frequency.value = 5000;
-
-        bellGain.connect(filter);
-        filter.connect(this.dryGain);
-        filter.connect(this.reverbNode);
-
-        // Случайная панорама для каждой ноты
         const panner = this.audioCtx.createStereoPanner();
         panner.pan.value = (Math.random() - 0.5) * 0.6;
-        filter.disconnect();
+        bellGain.connect(filter);
         filter.connect(panner);
         panner.connect(this.dryGain);
         panner.connect(this.reverbNode);
-
         partials.forEach(p => {
             const f = freq * p.ratio;
             if (f >= this.audioCtx.sampleRate / 2) return;
-
             const osc = this.audioCtx.createOscillator();
             osc.type = 'sine';
             osc.frequency.value = f;
-
             const g = this.audioCtx.createGain();
-            // Огибающая: мгновенная атака, экспоненциальное затухание
             g.gain.setValueAtTime(0, now);
             g.gain.linearRampToValueAtTime(p.amp, now + 0.008);
             g.gain.exponentialRampToValueAtTime(0.0001, now + duration * (1.5 / p.decay));
-
             osc.connect(g);
             g.connect(bellGain);
-
             osc.start(now);
             osc.stop(now + duration);
         });
     }
 
-    // Пэд — длинная аккордовая подушка
     playPad(chordName) {
         const notes = PAD_CHORDS[chordName];
         if (!notes) return;
-
         const now = this.audioCtx.currentTime;
         const duration = 6.0;
-
         const padGain = this.audioCtx.createGain();
         padGain.gain.setValueAtTime(0, now);
         padGain.gain.linearRampToValueAtTime(0.12, now + 1.5);
         padGain.gain.setValueAtTime(0.12, now + duration - 2.0);
         padGain.gain.linearRampToValueAtTime(0, now + duration);
-
-        // Медленный filter sweep — пэд "дышит"
         const filter = this.audioCtx.createBiquadFilter();
         filter.type = 'lowpass';
         filter.frequency.setValueAtTime(1200, now);
         filter.frequency.linearRampToValueAtTime(3500, now + duration / 2);
         filter.frequency.linearRampToValueAtTime(1500, now + duration);
         filter.Q.value = 1;
-
         padGain.connect(filter);
         filter.connect(this.dryGain);
         filter.connect(this.reverbNode);
-
         notes.forEach(noteName => {
             const freq = NOTES[noteName];
             if (!freq) return;
-
-            // Три расстроенных осциллятора на ноту — "толстый" звук
             [0, 0.004, -0.004].forEach(detune => {
                 const osc = this.audioCtx.createOscillator();
                 osc.type = 'sine';
                 osc.frequency.value = freq * (1 + detune);
-
                 const g = this.audioCtx.createGain();
                 g.gain.value = 0.15;
-
                 osc.connect(g);
                 g.connect(padGain);
                 osc.start(now);
                 osc.stop(now + duration);
             });
-
-            // Октава сверху для блеска
             const oscOct = this.audioCtx.createOscillator();
             oscOct.type = 'sine';
             oscOct.frequency.value = freq * 2;
@@ -222,12 +193,9 @@ class MusicBox {
 
     async playPattern(chordName, pattern) {
         if (!this.isPlaying) return;
-
         this.playPad(chordName);
-
         const notes = CHORDS[chordName];
         if (!notes) return;
-
         for (let i = 0; i < pattern.length; i++) {
             if (!this.isPlaying) return;
             const step = pattern[i];
@@ -248,14 +216,11 @@ class MusicBox {
             progressionCount++;
             const progression = CHORD_PROGRESSIONS[Math.floor(Math.random() * CHORD_PROGRESSIONS.length)];
             const pattern = PATTERNS[Math.floor(Math.random() * PATTERNS.length)];
-
             this.updateStatus(`🎶 Прогрессия #${progressionCount}: ${progression.join(' → ')}`);
-
             for (const chord of progression) {
                 if (!this.isPlaying) return;
                 await this.playPattern(chord, pattern);
             }
-
             const pause = 600 + Math.random() * 600;
             await this.sleep(pause / this.tempoMultiplier);
         }
@@ -302,11 +267,118 @@ class MusicBox {
     }
 }
 
+// ============= МЕДУЗКА =============
+
+class Jellyfish {
+    constructor(musicBox, svgPath) {
+        this.musicBox = musicBox;
+        this.path = svgPath;
+        this.numPoints = 64;           // точек по окружности
+        this.baseRadius = 55;          // базовый радиус
+        this.currentOffsets = new Float32Array(this.numPoints);
+        this.targetOffsets = new Float32Array(this.numPoints);
+        this.time = 0;
+        this.animate = this.animate.bind(this);
+        requestAnimationFrame(this.animate);
+    }
+
+    animate() {
+        this.time += 0.016;
+
+        let bass = 0, mid = 0, treble = 0;
+
+        if (this.musicBox.analyser && this.musicBox.isPlaying) {
+            const bufferLength = this.musicBox.analyser.frequencyBinCount;
+            const data = new Uint8Array(bufferLength);
+            this.musicBox.analyser.getByteFrequencyData(data);
+
+            // Разбиваем спектр на три полосы
+            const bassEnd = Math.floor(bufferLength * 0.1);
+            const midEnd = Math.floor(bufferLength * 0.4);
+
+            for (let i = 0; i < bassEnd; i++) bass += data[i];
+            for (let i = bassEnd; i < midEnd; i++) mid += data[i];
+            for (let i = midEnd; i < bufferLength; i++) treble += data[i];
+
+            bass = (bass / bassEnd) / 255;
+            mid = (mid / (midEnd - bassEnd)) / 255;
+            treble = (treble / (bufferLength - midEnd)) / 255;
+        }
+
+        // Рассчитываем целевые смещения для каждой точки
+        for (let i = 0; i < this.numPoints; i++) {
+            const angle = (i / this.numPoints) * Math.PI * 2;
+
+            // Три волны "дыхания" с разными частотами — медуза всегда живая
+            const breath =
+                Math.sin(this.time * 0.7 + angle * 2) * 3 +
+                Math.sin(this.time * 1.3 + angle * 3) * 2 +
+                Math.sin(this.time * 0.4 + angle) * 4;
+
+            // Аудио-реакция: басы толкают низ медузы, верха — верх,
+            // средние — равномерно во все стороны
+            const bassInfluence = bass * 25 * Math.max(0, -Math.cos(angle));
+            const trebleInfluence = treble * 18 * Math.max(0, Math.cos(angle));
+            const midInfluence = mid * 12 * (0.5 + 0.5 * Math.sin(angle * 4 + this.time));
+
+            this.targetOffsets[i] = breath + bassInfluence + trebleInfluence + midInfluence;
+        }
+
+        // Плавная интерполяция к целевым значениям — медузка не дёргается
+        const smoothing = 0.15;
+        for (let i = 0; i < this.numPoints; i++) {
+            this.currentOffsets[i] += (this.targetOffsets[i] - this.currentOffsets[i]) * smoothing;
+        }
+
+        // Строим SVG-путь из точек, соединённых плавной кривой
+        const points = [];
+        for (let i = 0; i < this.numPoints; i++) {
+            const angle = (i / this.numPoints) * Math.PI * 2;
+            const r = this.baseRadius + this.currentOffsets[i];
+            points.push({
+                x: Math.cos(angle) * r,
+                y: Math.sin(angle) * r,
+            });
+        }
+
+        this.path.setAttribute('d', this.buildSmoothPath(points));
+
+        requestAnimationFrame(this.animate);
+    }
+
+    // Замкнутая гладкая кривая через все точки (Catmull-Rom-подобный сплайн)
+    buildSmoothPath(points) {
+        const n = points.length;
+        let d = '';
+        for (let i = 0; i < n; i++) {
+            const p0 = points[(i - 1 + n) % n];
+            const p1 = points[i];
+            const p2 = points[(i + 1) % n];
+            const p3 = points[(i + 2) % n];
+
+            if (i === 0) {
+                d += `M ${p1.x.toFixed(2)} ${p1.y.toFixed(2)} `;
+            }
+
+            // Контрольные точки для кубической Безье
+            const c1x = p1.x + (p2.x - p0.x) / 6;
+            const c1y = p1.y + (p2.y - p0.y) / 6;
+            const c2x = p2.x - (p3.x - p1.x) / 6;
+            const c2y = p2.y - (p3.y - p1.y) / 6;
+
+            d += `C ${c1x.toFixed(2)} ${c1y.toFixed(2)}, ${c2x.toFixed(2)} ${c2y.toFixed(2)}, ${p2.x.toFixed(2)} ${p2.y.toFixed(2)} `;
+        }
+        return d + 'Z';
+    }
+}
+
 // === UI ===
 const musicBox = new MusicBox();
+const jellyPath = document.getElementById('jellyPath');
+const jellyfish = new Jellyfish(musicBox, jellyPath);
+
 const playBtn = document.getElementById('playBtn');
 const btnText = document.getElementById('btnText');
-const circle = document.getElementById('circle');
 const volumeSlider = document.getElementById('volume');
 const tempoSlider = document.getElementById('tempo');
 
@@ -314,11 +386,9 @@ playBtn.addEventListener('click', async () => {
     if (musicBox.isPlaying) {
         musicBox.stop();
         btnText.textContent = '▶ Включить музыку';
-        circle.classList.remove('playing');
     } else {
         await musicBox.start();
         btnText.textContent = '⏸ Остановить';
-        circle.classList.add('playing');
     }
 });
 
