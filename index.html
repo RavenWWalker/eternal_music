@@ -4,12 +4,26 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="icon" type="image/x-icon" href="favicon.ico">
+    <link rel="shortcut icon" href="favicon.ico">
     <title>Музыкальная шкатулка</title>
     <link rel="stylesheet" href="style.css">
+    <script>
+        (function() {
+            const saved = localStorage.getItem('theme');
+            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            const theme = saved || (prefersDark ? 'dark' : 'light');
+            document.documentElement.setAttribute('data-theme', theme);
+        })();
+    </script>
 </head>
 <body>
     <div class="container">
         <div class="card">
+            <button id="themeToggle" class="theme-toggle" aria-label="Переключить тему">
+                <span class="theme-icon-light">☀️</span>
+                <span class="theme-icon-dark">🌙</span>
+            </button>
+
             <h1>🔔 Музыкальная шкатулка</h1>
             <p class="subtitle">Бесконечная процедурная мелодия</p>
 
@@ -37,10 +51,19 @@
 
         <div class="info">
             <p>Каждое прослушивание уникально — мелодия рождается прямо сейчас</p>
-            <a href="https://github.com/ВАШ_НИК/music-box" target="_blank">Исходный код на GitHub</a>
+            <a href="https://github.com/RavenWWalker/eternal_music" target="_blank">Исходный код на GitHub</a>
         </div>
     </div>
 
     <script src="music.js"></script>
+    <script>
+        const themeToggle = document.getElementById('themeToggle');
+        themeToggle.addEventListener('click', () => {
+            const current = document.documentElement.getAttribute('data-theme');
+            const next = current === 'dark' ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', next);
+            localStorage.setItem('theme', next);
+        });
+    </script>
 </body>
 </html>
