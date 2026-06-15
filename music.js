@@ -273,26 +273,57 @@ class Jellyfish {
     constructor(musicBox, svgPath) {
         this.musicBox = musicBox;
         this.path = svgPath;
-        this.numPoints = 64;           // точек по окружности
-        this.baseRadius = 55;          // базовый радиус
+        this.numPoints = 96;
+        this.baseRadius = 50;
         this.currentOffsets = new Float32Array(this.numPoints);
         this.targetOffsets = new Float32Array(this.numPoints);
         this.time = 0;
+
+        // "Аттракторы" — точки на окружности, в которых растут щупальца.
+        // Каждый аттрактор медленно дрейфует по углу, дышит по силе
+        // и периодически перерождается в новом месте.
+        this.numAttractors = 5;
+        this.attractors = [];
+        for (let i = 0; i < this.numAttractors; i++) {
+            this.attractors.push(this.spawnAttractor(true));
+        }
+
         this.animate = this.animate.bind(this);
         requestAnimationFrame(this.animate);
     }
 
-    animate() {
-        this.time += 0.016;
+    spawnAttractor(initial = false) {
+        return {
+            angle: Math.random() * Math.PI * 2,        // позиция на окружности
+            angleSpeed: (Math.random() - 0.5) * 0.3,   // дрейф
+            width: 0.15 + Math.random() * 0.25,        // ширина щупальца (в радианах)
+            strength: 0.4 + Math.random() * 0.6,       // сила вытягивания
+            phase: Math.random() * Math.PI * 2,        // фаза собственного "дыхания"
+            phaseSpeed: 0.3 + Math.random() * 0.8,
+            // Время жизни — щупальца исчезают и появляются в новых местах
+            life: initial ? Math.random() * 8 : 0,
+            maxLife: 6 + Math.random() * 8,
+        };
+    }
 
-        let bass = 0, mid = 0, treble = 0;
+    // Расстояние между двумя углами по короткой дуге (учитывает 2π-замыкание)
+    angularDistance(a, b) {
+        let d = Math.abs(a - b) % (Math.PI * 2);
+        if (d > Math.PI) d = Math.PI * 2 - d;
+        return d;
+    }
+
+    animate() {
+        const dt = 0.016;
+        this.time += dt;
+
+        let bass = 0, mid = 0, treble = 0, overall = 0;
 
         if (this.musicBox.analyser && this.musicBox.isPlaying) {
             const bufferLength = this.musicBox.analyser.frequencyBinCount;
             const data = new Uint8Array(bufferLength);
             this.musicBox.analyser.getByteFrequencyData(data);
 
-            // Разбиваем спектр на три полосы
             const bassEnd = Math.floor(bufferLength * 0.1);
             const midEnd = Math.floor(bufferLength * 0.4);
 
@@ -303,38 +334,78 @@ class Jellyfish {
             bass = (bass / bassEnd) / 255;
             mid = (mid / (midEnd - bassEnd)) / 255;
             treble = (treble / (bufferLength - midEnd)) / 255;
+            overall = (bass + mid + treble) / 3;
         }
 
-        // Рассчитываем целевые смещения для каждой точки
+        // Обновляем аттракторы: дрейф, дыхание, рождение/смерть
+        for (let a of this.attractors) {
+            a.angle += a.angleSpeed * dt;
+            a.phase += a.phaseSpeed * dt;
+            a.life += dt;
+
+            // Когда жизнь истекла — перерождаемся в новом месте
+            if (a.life > a.maxLife) {
+                Object.assign(a, this.spawnAttractor(false));
+            }
+        }
+
+        // Считаем целевое смещение для каждой точки контура
         for (let i = 0; i < this.numPoints; i++) {
             const angle = (i / this.numPoints) * Math.PI * 2;
 
-            // Три волны "дыхания" с разными частотами — медуза всегда живая
+            // Базовое "дыхание" — несколько волн с разной длиной и скоростью
             const breath =
-                Math.sin(this.time * 0.7 + angle * 2) * 3 +
-                Math.sin(this.time * 1.3 + angle * 3) * 2 +
-                Math.sin(this.time * 0.4 + angle) * 4;
+                Math.sin(this.time * 0.6 + angle * 2) * 2.5 +
+                Math.sin(this.time * 1.1 + angle * 5) * 1.5 +
+                Math.sin(this.time * 0.35 + angle) * 3;
 
-            // Аудио-реакция: басы толкают низ медузы, верха — верх,
-            // средние — равномерно во все стороны
-            const bassInfluence = bass * 25 * Math.max(0, -Math.cos(angle));
-            const trebleInfluence = treble * 18 * Math.max(0, Math.cos(angle));
-            const midInfluence = mid * 12 * (0.5 + 0.5 * Math.sin(angle * 4 + this.time));
+            // Высокочастотный шум — придаёт "органичность"
+            // (разная длина волны → форма перестаёт быть кругом)
+            const noise =
+                Math.sin(this.time * 1.7 + angle * 7) * 1.5 +
+                Math.sin(this.time * 0.9 + angle * 11) * 1.0;
 
-            this.targetOffsets[i] = breath + bassInfluence + trebleInfluence + midInfluence;
+            // Влияние каждого аттрактора: гауссовский всплеск в его направлении
+            let attractorPush = 0;
+            for (const a of this.attractors) {
+                const d = this.angularDistance(angle, a.angle);
+                // Гауссова "шапка": максимум в центре, плавно спадает к нулю
+                const bump = Math.exp(-(d * d) / (2 * a.width * a.width));
+
+                // Жизненная огибающая: щупальце плавно рождается и угасает
+                const lifeFactor = Math.sin((a.life / a.maxLife) * Math.PI);
+
+                // Собственная пульсация щупальца
+                const pulse = 0.7 + 0.3 * Math.sin(a.phase);
+
+                // Сила = базовая сила + усиление от музыки
+                const audioBoost = 1 + overall * 1.5;
+                attractorPush += bump * a.strength * lifeFactor * pulse * audioBoost * 30;
+            }
+
+            // Реакция на разные частотные полосы
+            // Басы давят всю медузу наружу
+            const bassInfluence = bass * 8;
+            // Верха создают мелкую "рябь" по контуру
+            const trebleInfluence = treble * 6 * Math.sin(angle * 9 + this.time * 3);
+            // Середина усиливает асимметрию
+            const midInfluence = mid * 5 * Math.sin(angle * 3 + this.time);
+
+            this.targetOffsets[i] = breath + noise + attractorPush +
+                                    bassInfluence + trebleInfluence + midInfluence;
         }
 
-        // Плавная интерполяция к целевым значениям — медузка не дёргается
-        const smoothing = 0.15;
+        // Плавная интерполяция — медузка не дёргается, а перетекает
+        const smoothing = 0.12;
         for (let i = 0; i < this.numPoints; i++) {
             this.currentOffsets[i] += (this.targetOffsets[i] - this.currentOffsets[i]) * smoothing;
         }
 
-        // Строим SVG-путь из точек, соединённых плавной кривой
+        // Строим точки контура
         const points = [];
         for (let i = 0; i < this.numPoints; i++) {
             const angle = (i / this.numPoints) * Math.PI * 2;
-            const r = this.baseRadius + this.currentOffsets[i];
+            const r = Math.max(15, this.baseRadius + this.currentOffsets[i]);
             points.push({
                 x: Math.cos(angle) * r,
                 y: Math.sin(angle) * r,
@@ -342,11 +413,9 @@ class Jellyfish {
         }
 
         this.path.setAttribute('d', this.buildSmoothPath(points));
-
         requestAnimationFrame(this.animate);
     }
 
-    // Замкнутая гладкая кривая через все точки (Catmull-Rom-подобный сплайн)
     buildSmoothPath(points) {
         const n = points.length;
         let d = '';
@@ -360,7 +429,6 @@ class Jellyfish {
                 d += `M ${p1.x.toFixed(2)} ${p1.y.toFixed(2)} `;
             }
 
-            // Контрольные точки для кубической Безье
             const c1x = p1.x + (p2.x - p0.x) / 6;
             const c1y = p1.y + (p2.y - p0.y) / 6;
             const c2x = p2.x - (p3.x - p1.x) / 6;
