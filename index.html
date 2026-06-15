@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Музыкальная шкатулка</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <h1>🔔 Музыкальная шкатулка</h1>
+            <p class="subtitle">Бесконечная процедурная мелодия</p>
+
+            <div class="visualizer">
+                <div class="circle" id="circle"></div>
+            </div>
+
+            <button id="playBtn" class="play-btn">
+                <span id="btnText">▶ Включить музыку</span>
+            </button>
+
+            <div class="controls">
+                <label>
+                    <span>Громкость</span>
+                    <input type="range" id="volume" min="0" max="100" value="50">
+                </label>
+                <label>
+                    <span>Темп</span>
+                    <input type="range" id="tempo" min="50" max="150" value="100">
+                </label>
+            </div>
+
+            <div class="status" id="status">Нажмите кнопку, чтобы начать</div>
+        </div>
+
+        <div class="info">
+            <p>Каждое прослушивание уникально — мелодия рождается прямо сейчас</p>
+            <a href="https://github.com/ВАШ_НИК/music-box" target="_blank">Исходный код на GitHub</a>
+        </div>
+    </div>
+
+    <script src="music.js"></script>
+</body>
+</html>
